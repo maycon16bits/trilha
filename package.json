@@ -1,0 +1,11 @@
+{
+  "name": "trilha",
+  "private": true,
+  "workspaces": ["apps/*"],
+  "engines": { "node": ">=24" },
+  "scripts": {
+    "dev:api": "npm run dev -w apps/api",
+    "lint": "npm run lint --workspaces --if-present",
+    "typecheck": "npm run typecheck --workspaces --if-present"
+  }
+}
