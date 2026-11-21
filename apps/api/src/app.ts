@@ -1,20 +1,32 @@
 import express from "express";
-import type { PrismaClient } from "./generated/prisma/client";
+import {
+  useContainer,
+  useExpressServer,
+  type RoutingControllersOptions,
+} from "routing-controllers";
+import { Container } from "typedi";
+import { PRISMA, type QueryClient } from "./infrastructure/database/tokens";
+import { HealthController } from "./http/controllers/health.controller";
+import { ErrorHandlerMiddleware } from "./http/middleware/error-handler.middleware";
 
 type AppDependencies = {
-  prisma: Pick<PrismaClient, "$queryRaw">;
+  prisma: QueryClient;
+  controllers?: RoutingControllersOptions["controllers"];
 };
 
-export function createApp({ prisma }: AppDependencies) {
-  const app = express();
+export function createApp({
+  prisma,
+  controllers = [HealthController],
+}: AppDependencies) {
+  Container.set(PRISMA, prisma);
+  useContainer(Container);
 
-  app.get("/health", async (_req, res) => {
-    try {
-      await prisma.$queryRaw`SELECT 1`;
-      res.json({ status: "ok", database: "up" });
-    } catch {
-      res.status(503).json({ status: "error", database: "down" });
-    }
+  const app = express();
+  useExpressServer(app, {
+    controllers,
+    middlewares: [ErrorHandlerMiddleware],
+    defaultErrorHandler: false,
+    validation: { whitelist: true, forbidNonWhitelisted: true },
   });
 
   return app;

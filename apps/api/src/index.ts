@@ -1,7 +1,7 @@
 import "reflect-metadata";
 import { createApp } from "./app";
-import { loadEnv } from "./shared/config/env";
-import { createPrismaClient } from "./shared/database/prisma";
+import { loadEnv } from "./infrastructure/config/env";
+import { createPrismaClient } from "./infrastructure/database/prisma";
 
 const env = loadEnv();
 const prisma = createPrismaClient(env.DATABASE_URL);

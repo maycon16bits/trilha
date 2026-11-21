@@ -13,6 +13,7 @@
     "typecheck": "npm run typecheck --workspaces --if-present"
   },
   "dependencies": {
-    "routing-controllers": "0.11.3"
+    "routing-controllers": "0.11.3",
+    "winston": "3.19.0"
   }
 }
