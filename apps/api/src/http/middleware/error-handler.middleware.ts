@@ -32,7 +32,6 @@ function hasStatus(error: unknown): error is { status: number } {
 }
 
 function toResponse(error: unknown): { status: number; body: ErrorBody } {
-  // 1. Erros da aplicação: o próprio erro diz o status e o code.
   if (error instanceof BaseError) {
     return {
       status: error.statusCode,
@@ -46,7 +45,6 @@ function toResponse(error: unknown): { status: number; body: ErrorBody } {
     };
   }
 
-  // 2. Erros do routing-controllers (DTO inválido, rota inexistente...).
   if (error instanceof HttpError) {
     const issues = validationIssuesOf(error);
     if (issues) {
@@ -71,7 +69,6 @@ function toResponse(error: unknown): { status: number; body: ErrorBody } {
     };
   }
 
-  // 3. Erros de bibliotecas com status 4xx (ex.: JSON malformado no corpo).
   if (hasStatus(error) && error.status >= 400 && error.status < 500) {
     return {
       status: error.status,
@@ -79,7 +76,6 @@ function toResponse(error: unknown): { status: number; body: ErrorBody } {
     };
   }
 
-  // 4. Qualquer outra coisa é um bug: resposta genérica, sem vazar detalhes.
   return {
     status: 500,
     body: {

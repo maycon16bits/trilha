@@ -2,7 +2,7 @@ import { BaseError } from "./base.error";
 
 export class UnauthorizedError extends BaseError {
   constructor(
-    message: string = "Unauthorized",
+    message: string = "Não autorizado",
     code = "UNAUTHORIZED",
     details?: unknown,
   ) {
