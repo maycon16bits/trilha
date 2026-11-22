@@ -1,4 +1,3 @@
-// conflict.error.ts
 import { BaseError } from "./base.error";
 
 export class ConflictError extends BaseError {
