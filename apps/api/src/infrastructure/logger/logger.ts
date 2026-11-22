@@ -14,7 +14,7 @@ export class Logger implements ILogger {
         winston.format.errors({ stack: true }),
         winston.format.json(),
       ),
-      defaultMeta: { service: "financy-manager" },
+      defaultMeta: { service: "trilha" },
       transports: [
         new winston.transports.File({
           filename: "logs/error.log",
