@@ -1,7 +1,7 @@
 import { WeakPasswordError } from "../../errors/weak-password.error";
 
 export class Password {
-  private static readonly RULE = /^(?=.*[a-zA-Z])(?=.*[0-9])[a-zA-Z0-9]{8,}$/;
+  private static readonly RULE = /^(?=.*[A-Za-z])(?=.*\d)\S{8,240}$/;
 
   private constructor(private readonly password: string) {}
 
