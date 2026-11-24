@@ -6,6 +6,6 @@ export class InvalidEmailError extends BaseError {
     code = "INVALID_EMAIL",
     details?: unknown,
   ) {
-    super(message, 403, code, details);
+    super(message, 400, code, details);
   }
 }
