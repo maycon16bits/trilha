@@ -17,7 +17,7 @@ describe("ValidatePassword Service", () => {
     });
   });
 
-  describe.only("should reject invalid passwords", () => {
+  describe("should reject invalid passwords", () => {
     it.each([
       "12345678", // Does not contain letters
       "abcdefgh", // Does not contain numbers
