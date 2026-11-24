@@ -1,8 +1,8 @@
 import { InvalidStatusTransitionError } from "../../errors/invalid-status-transition.error";
 import { InvalidUserError } from "../../errors/invalid-user.error";
 import { UniqueEntityId } from "../../shared/unique-entity-id";
-import { UserRole } from "../user-role.enum";
-import { UserStatus } from "../user-status.enum";
+import { UserRole } from "../enums/user-role.enum";
+import { UserStatus } from "../enums/user-status.enum";
 import { Email } from "../value-objects";
 import { User, UserProps } from "./user.entity";
 
