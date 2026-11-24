@@ -1,7 +1,21 @@
-// This is your Prisma schema file,
-// learn more about it in the docs: https://pris.ly/d/prisma-schema
-
-// Get a free hosted Postgres database in seconds: `npx create-db`
+// Schema do Trilha (PostgreSQL). Fonte: modelagem aprovada em 22/11/2026 e SPEC.md §7.
+//
+// Convenções:
+// - Modelos em PascalCase singular; tabelas e colunas em snake_case (@@map / @map).
+// - Enums em PascalCase; o tipo no banco é snake_case (@@map).
+// - Datas de calendário = @db.Date (sem fuso). Instantes = @db.Timestamptz(3).
+// - Exclusão: Restrict por padrão (histórico não some por acidente). Cascade só
+//   em registros que não existem sem o pai (alternativas, itens de lista, etc.).
+//
+// O que o Prisma NÃO declara e entra como SQL manual na migration (ver SPEC.md §7):
+// - choices: índice único parcial em (question_id) WHERE is_correct  (RN-05)
+// - attempts: índice único parcial em (student_id, question_id) WHERE is_first  (RN-06)
+// - essays: CHECK das notas (0, 40, 80, 120, 160, 200) e final_score entre 0 e 1000  (RN-14)
+// - invitations: índice único parcial em (email) WHERE used_at IS NULL AND revoked_at IS NULL
+//   (um convite aberto por e-mail)  (RN-22)
+// - students.user_id só para users.role = STUDENT; staff_profiles.user_id só para
+//   TEACHER e COORDINATOR: regra do caso de uso, com teste de integração.
+// - invitations.role só STUDENT ou TEACHER por enquanto: regra do caso de uso.
 
 generator client {
   provider     = "prisma-client"
@@ -11,4 +25,549 @@ generator client {
 
 datasource db {
   provider = "postgresql"
+}
+
+// ============================================================
+// ENUMS
+// ============================================================
+
+enum UserRole {
+  STUDENT
+  TEACHER
+  COORDINATOR
+
+  @@map("user_role")
+}
+
+enum UserStatus {
+  ACTIVE
+  INACTIVE
+
+  @@map("user_status")
+}
+
+enum ApprovalStatus {
+  PENDING
+  APPROVED
+  REJECTED
+
+  @@map("approval_status")
+}
+
+enum EducationLevel {
+  HIGH_SCHOOL_1
+  HIGH_SCHOOL_2
+  HIGH_SCHOOL_3
+  HIGH_SCHOOL_COMPLETED
+  HIGHER_ED_INCOMPLETE
+  HIGHER_ED_COMPLETED
+  OTHER
+
+  @@map("education_level")
+}
+
+enum SchoolSituation {
+  STUDYING
+  FINISHED
+
+  @@map("school_situation")
+}
+
+enum SchoolType {
+  PUBLIC
+  PRIVATE
+
+  @@map("school_type")
+}
+
+enum AuthTokenType {
+  PASSWORD_RESET // reservado para a recuperação de senha (D16)
+
+  @@map("auth_token_type")
+}
+
+enum ClassGroupStatus {
+  ACTIVE
+  CLOSED
+
+  @@map("class_group_status")
+}
+
+enum EnrollmentStatus {
+  ACTIVE
+  WITHDRAWN
+
+  @@map("enrollment_status")
+}
+
+enum QuestionSource {
+  ENEM
+  OTHER_EXAM
+  AUTHORED
+
+  @@map("question_source")
+}
+
+enum AttendanceStatus {
+  PRESENT
+  ABSENT
+  ABSENT_EXCUSED
+
+  @@map("attendance_status")
+}
+
+enum EssayStatus {
+  DRAFT
+  PUBLISHED
+
+  @@map("essay_status")
+}
+
+// ============================================================
+// IDENTIDADE
+// users = dados comuns a qualquer perfil. students e staff_profiles = dados
+// específicos de cada perfil. Não existe cadastro público: toda conta nasce de
+// um convite exclusivo (invitations), criado pela coordenação.
+// ============================================================
+
+model User {
+  id           String     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  role         UserRole
+  status       UserStatus @default(ACTIVE)
+  name         String     @db.VarChar(150)
+  email        String     @unique @db.VarChar(254) // gravado já normalizado; só serve para login
+  passwordHash String     @map("password_hash") @db.VarChar(255)
+  phone        String?    @db.VarChar(20)
+  createdAt    DateTime   @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt    DateTime   @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  student         Student?
+  staffProfile    StaffProfile?
+  invitation      Invitation?
+  authTokens      AuthToken[]
+  rollCalls       RollCall[]    @relation("RollCallRegisteredBy")
+  excusedAbsences Attendance[]  @relation("AttendanceExcusedBy")
+  auditLogs       AuditLog[]
+
+  @@index([role, status])
+  @@map("users")
+}
+
+model Student {
+  userId          String          @id @map("user_id") @db.Uuid
+  birthDate       DateTime        @map("birth_date") @db.Date // a idade é calculada, não guardada
+  educationLevel  EducationLevel  @map("education_level")
+  schoolName      String          @map("school_name") @db.VarChar(150)
+  schoolSituation SchoolSituation @map("school_situation")
+  schoolType      SchoolType?     @map("school_type")
+  approvalStatus  ApprovalStatus  @default(PENDING) @map("approval_status")
+  approvedBy      String?         @map("approved_by") @db.Uuid
+  approvedAt      DateTime?       @map("approved_at") @db.Timestamptz(3)
+  rejectionReason String?         @map("rejection_reason")
+  createdAt       DateTime        @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt       DateTime        @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  user     User          @relation(fields: [userId], references: [id])
+  approver StaffProfile? @relation("StudentApprovedBy", fields: [approvedBy], references: [userId])
+
+  guardian    Guardian?
+  enrollments Enrollment[]
+  attempts    Attempt[]
+  attendances Attendance[]
+  essays      Essay[]
+
+  @@index([approvalStatus])
+  @@map("students")
+}
+
+model Guardian {
+  id            String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  studentId     String   @unique @map("student_id") @db.Uuid
+  name          String   @db.VarChar(150)
+  relationship  String   @db.VarChar(50) // parentesco
+  contact       String   @db.VarChar(254) // telefone ou e-mail
+  consentedAt   DateTime @map("consented_at") @db.Timestamptz(3)
+  policyVersion String   @map("policy_version") @db.VarChar(20)
+
+  student Student @relation(fields: [studentId], references: [userId], onDelete: Cascade)
+
+  @@map("guardians")
+}
+
+model StaffProfile {
+  userId        String    @id @map("user_id") @db.Uuid
+  qualification String?   @db.VarChar(150) // formação (a confirmar)
+  hiredAt       DateTime? @map("hired_at") @db.Date
+  createdAt     DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt     DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  user User @relation(fields: [userId], references: [id])
+
+  approvedStudents   Student[]      @relation("StudentApprovedBy")
+  invitationsCreated Invitation[]   @relation("InvitationCreatedBy")
+  classSubjects      ClassSubject[]
+  questions          Question[]
+  materials          Material[]
+  gradedEssays       Essay[]        @relation("EssayGradedBy")
+
+  @@map("staff_profiles")
+}
+
+// Convite exclusivo para criar uma conta. A coordenação informa e-mail e
+// telefone; o convidado vê os dois travados e preenche o resto. A conta só
+// existe depois do aceite (user_id preenchido). Estado derivado: aberto (sem
+// used_at e revoked_at e dentro da validade), usado, revogado ou expirado.
+model Invitation {
+  id        String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  role      UserRole // conta que será criada (por enquanto STUDENT ou TEACHER)
+  email     String    @db.VarChar(254) // normalizado; o convidado não altera
+  phone     String    @db.VarChar(20) // o convidado não altera
+  tokenHash String    @unique @map("token_hash") @db.VarChar(64) // só o hash (RN-20)
+  invitedBy String    @map("invited_by") @db.Uuid
+  expiresAt DateTime  @map("expires_at") @db.Timestamptz(3)
+  usedAt    DateTime? @map("used_at") @db.Timestamptz(3)
+  revokedAt DateTime? @map("revoked_at") @db.Timestamptz(3)
+  userId    String?   @unique @map("user_id") @db.Uuid // conta criada ao aceitar
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  inviter StaffProfile @relation("InvitationCreatedBy", fields: [invitedBy], references: [userId])
+  user    User?        @relation(fields: [userId], references: [id])
+
+  @@index([email])
+  @@index([invitedBy])
+  @@map("invitations")
+}
+
+model AuthToken {
+  id        String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId    String        @map("user_id") @db.Uuid
+  type      AuthTokenType
+  tokenHash String        @unique @map("token_hash") @db.VarChar(64) // só o hash
+  expiresAt DateTime      @map("expires_at") @db.Timestamptz(3)
+  usedAt    DateTime?     @map("used_at") @db.Timestamptz(3)
+  createdAt DateTime      @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, type])
+  @@map("auth_tokens")
+}
+
+// ============================================================
+// ACADÊMICO
+// ============================================================
+
+model Subject {
+  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name        String   @unique @db.VarChar(100)
+  allowsEssay Boolean  @default(false) @map("allows_essay")
+  isActive    Boolean  @default(true) @map("is_active")
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  topics        Topic[]
+  classSubjects ClassSubject[]
+  questions     Question[]
+
+  @@map("subjects")
+}
+
+model Topic {
+  id        String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  subjectId String @map("subject_id") @db.Uuid
+  name      String @db.VarChar(150)
+
+  subject   Subject    @relation(fields: [subjectId], references: [id])
+  questions Question[]
+
+  @@unique([subjectId, name])
+  @@map("topics")
+}
+
+model ClassGroup {
+  id         String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name       String           @db.VarChar(100)
+  schoolYear Int              @map("school_year") @db.SmallInt
+  status     ClassGroupStatus @default(ACTIVE)
+  closedAt   DateTime?        @map("closed_at") @db.Timestamptz(3)
+  createdAt  DateTime         @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  classSubjects ClassSubject[]
+  enrollments   Enrollment[]
+  attempts      Attempt[]
+  rollCalls     RollCall[]
+  essays        Essay[]
+
+  @@map("class_groups")
+}
+
+model ClassSubject {
+  id           String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  classGroupId String @map("class_group_id") @db.Uuid
+  subjectId    String @map("subject_id") @db.Uuid
+  teacherId    String @map("teacher_id") @db.Uuid
+
+  classGroup ClassGroup   @relation(fields: [classGroupId], references: [id])
+  subject    Subject      @relation(fields: [subjectId], references: [id])
+  teacher    StaffProfile @relation(fields: [teacherId], references: [userId])
+
+  questionLists QuestionList[]
+  materials     Material[]
+
+  @@unique([classGroupId, subjectId])
+  @@index([teacherId])
+  @@map("class_subjects")
+}
+
+model Enrollment {
+  id           String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  studentId    String           @map("student_id") @db.Uuid
+  classGroupId String           @map("class_group_id") @db.Uuid
+  status       EnrollmentStatus @default(ACTIVE)
+  createdAt    DateTime         @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  student    Student    @relation(fields: [studentId], references: [userId])
+  classGroup ClassGroup @relation(fields: [classGroupId], references: [id])
+
+  @@unique([studentId, classGroupId])
+  @@index([classGroupId])
+  @@map("enrollments")
+}
+
+// ============================================================
+// EXERCÍCIOS
+// A dificuldade NÃO é coluna: é agregação sobre attempts (RN-08).
+// ============================================================
+
+model Question {
+  id              String         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  subjectId       String         @map("subject_id") @db.Uuid
+  topicId         String         @map("topic_id") @db.Uuid
+  statement       String // Markdown com fórmulas (KaTeX)
+  source          QuestionSource
+  examYear        Int?           @map("exam_year") @db.SmallInt
+  sourceReference String?        @map("source_reference") @db.VarChar(200)
+  createdBy       String         @map("created_by") @db.Uuid
+  isArchived      Boolean        @default(false) @map("is_archived")
+  createdAt       DateTime       @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt       DateTime       @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  subject Subject      @relation(fields: [subjectId], references: [id])
+  topic   Topic        @relation(fields: [topicId], references: [id])
+  creator StaffProfile @relation(fields: [createdBy], references: [userId])
+
+  images    QuestionImage[]
+  choices   Choice[]
+  listItems QuestionListItem[]
+  attempts  Attempt[]
+
+  @@index([subjectId, topicId])
+  @@index([source])
+  @@map("questions")
+}
+
+model QuestionImage {
+  id         String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  questionId String @map("question_id") @db.Uuid
+  fileKey    String @map("file_key") @db.VarChar(255)
+  mime       String @db.VarChar(100)
+  position   Int    @default(0) @db.SmallInt
+
+  question Question @relation(fields: [questionId], references: [id], onDelete: Cascade)
+
+  @@map("question_images")
+}
+
+model Choice {
+  id         String  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  questionId String  @map("question_id") @db.Uuid
+  letter     String  @db.Char(1)
+  text       String
+  isCorrect  Boolean @default(false) @map("is_correct")
+
+  question Question  @relation(fields: [questionId], references: [id], onDelete: Cascade)
+  attempts Attempt[]
+
+  @@unique([questionId, letter])
+  @@map("choices")
+}
+
+model QuestionList {
+  id             String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  classSubjectId String    @map("class_subject_id") @db.Uuid
+  title          String    @db.VarChar(150)
+  lessonDate     DateTime? @map("lesson_date") @db.Date
+  isPublished    Boolean   @default(false) @map("is_published")
+  createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  classSubject ClassSubject @relation(fields: [classSubjectId], references: [id])
+
+  items    QuestionListItem[]
+  attempts Attempt[]
+
+  @@index([classSubjectId])
+  @@map("question_lists")
+}
+
+model QuestionListItem {
+  id             String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  questionListId String @map("question_list_id") @db.Uuid
+  questionId     String @map("question_id") @db.Uuid
+  position       Int    @db.SmallInt
+
+  questionList QuestionList @relation(fields: [questionListId], references: [id], onDelete: Cascade)
+  question     Question     @relation(fields: [questionId], references: [id])
+
+  @@unique([questionListId, questionId])
+  @@unique([questionListId, position])
+  @@map("question_list_items")
+}
+
+model Attempt {
+  id             String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  studentId      String    @map("student_id") @db.Uuid
+  questionId     String    @map("question_id") @db.Uuid
+  choiceId       String    @map("choice_id") @db.Uuid
+  classGroupId   String    @map("class_group_id") @db.Uuid
+  questionListId String?   @map("question_list_id") @db.Uuid // nulo quando veio do banco de estudo
+  isCorrect      Boolean   @map("is_correct")
+  isFirst        Boolean   @default(false) @map("is_first")
+  resetAt        DateTime? @map("reset_at") @db.Timestamptz(3)
+  createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  student      Student       @relation(fields: [studentId], references: [userId])
+  question     Question      @relation(fields: [questionId], references: [id])
+  choice       Choice        @relation(fields: [choiceId], references: [id])
+  classGroup   ClassGroup    @relation(fields: [classGroupId], references: [id])
+  questionList QuestionList? @relation(fields: [questionListId], references: [id])
+
+  // Só se acrescenta (RN-06). Falta o índice único parcial (ver topo do arquivo).
+  @@index([studentId, questionId])
+  @@index([questionId, isFirst])
+  @@index([classGroupId])
+  @@map("attempts")
+}
+
+// ============================================================
+// CHAMADA
+// ============================================================
+
+model RollCall {
+  id           String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  classGroupId String   @map("class_group_id") @db.Uuid
+  date         DateTime @db.Date // data de calendário, sem fuso (RN-10)
+  registeredBy String   @map("registered_by") @db.Uuid
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  classGroup  ClassGroup   @relation(fields: [classGroupId], references: [id])
+  registrant  User         @relation("RollCallRegisteredBy", fields: [registeredBy], references: [id])
+  attendances Attendance[]
+
+  @@unique([classGroupId, date])
+  @@map("roll_calls")
+}
+
+model Attendance {
+  id            String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  rollCallId    String           @map("roll_call_id") @db.Uuid
+  studentId     String           @map("student_id") @db.Uuid
+  status        AttendanceStatus
+  justification String?
+  excusedBy     String?          @map("excused_by") @db.Uuid
+  excusedAt     DateTime?        @map("excused_at") @db.Timestamptz(3)
+
+  rollCall RollCall @relation(fields: [rollCallId], references: [id])
+  student  Student  @relation(fields: [studentId], references: [userId])
+  excuser  User?    @relation("AttendanceExcusedBy", fields: [excusedBy], references: [id])
+
+  @@unique([rollCallId, studentId])
+  @@index([studentId])
+  @@map("attendances")
+}
+
+// ============================================================
+// MATERIAIS E REDAÇÕES
+// ============================================================
+
+model Material {
+  id             String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  classSubjectId String    @map("class_subject_id") @db.Uuid
+  title          String    @db.VarChar(150)
+  fileKey        String    @map("file_key") @db.VarChar(255) // armazenamento privado (RN-16)
+  mime           String    @db.VarChar(100)
+  sizeBytes      BigInt    @map("size_bytes")
+  lessonDate     DateTime? @map("lesson_date") @db.Date
+  uploadedBy     String    @map("uploaded_by") @db.Uuid
+  createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  classSubject ClassSubject @relation(fields: [classSubjectId], references: [id])
+  uploader     StaffProfile @relation(fields: [uploadedBy], references: [userId])
+
+  @@index([classSubjectId])
+  @@map("materials")
+}
+
+model Essay {
+  id              String      @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  studentId       String      @map("student_id") @db.Uuid
+  classGroupId    String      @map("class_group_id") @db.Uuid
+  theme           String      @db.VarChar(255)
+  imageKey        String      @map("image_key") @db.VarChar(255) // armazenamento privado (RN-16)
+  status          EssayStatus @default(DRAFT)
+  scoreC1         Int?        @map("score_c1") @db.SmallInt
+  scoreC2         Int?        @map("score_c2") @db.SmallInt
+  scoreC3         Int?        @map("score_c3") @db.SmallInt
+  scoreC4         Int?        @map("score_c4") @db.SmallInt
+  scoreC5         Int?        @map("score_c5") @db.SmallInt
+  finalScore      Int?        @map("final_score") @db.SmallInt // soma calculada pelo sistema
+  generalFeedback String?     @map("general_feedback")
+  gradedBy        String      @map("graded_by") @db.Uuid
+  publishedAt     DateTime?   @map("published_at") @db.Timestamptz(3)
+  createdAt       DateTime    @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt       DateTime    @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3) // RF-31
+
+  student    Student      @relation(fields: [studentId], references: [userId])
+  classGroup ClassGroup   @relation(fields: [classGroupId], references: [id])
+  grader     StaffProfile @relation("EssayGradedBy", fields: [gradedBy], references: [userId])
+
+  annotations EssayAnnotation[]
+
+  @@index([studentId, status])
+  @@index([classGroupId])
+  @@map("essays")
+}
+
+model EssayAnnotation {
+  id         String  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  essayId    String  @map("essay_id") @db.Uuid
+  x          Decimal @db.Decimal(6, 5) // proporção de 0 a 1 da imagem
+  y          Decimal @db.Decimal(6, 5)
+  width      Decimal @db.Decimal(6, 5)
+  height     Decimal @db.Decimal(6, 5)
+  text       String
+  competency Int?    @db.SmallInt // 1 a 5, opcional
+
+  essay Essay @relation(fields: [essayId], references: [id], onDelete: Cascade)
+
+  @@index([essayId])
+  @@map("essay_annotations")
+}
+
+// ============================================================
+// AUDITORIA
+// ============================================================
+
+model AuditLog {
+  id         String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  actorId    String   @map("actor_id") @db.Uuid
+  action     String   @db.VarChar(100) // exemplo: STUDENT_APPROVED, ANSWER_KEY_CHANGED
+  entityType String   @map("entity_type") @db.VarChar(50)
+  entityId   String   @map("entity_id") @db.Uuid
+  details    Json?    @db.JsonB // sem dados pessoais
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  actor User @relation(fields: [actorId], references: [id])
+
+  @@index([entityType, entityId])
+  @@index([actorId])
+  @@map("audit_logs")
 }
