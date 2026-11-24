@@ -6,6 +6,6 @@ export class WeakPasswordError extends BaseError {
     code = "WEAK_PASSWORD",
     details?: unknown,
   ) {
-    super(message, 401, code, details);
+    super(message, 400, code, details);
   }
 }
