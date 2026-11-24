@@ -4,7 +4,7 @@
 
 Plataforma web para um curso pré-vestibular (ENEM): alunos resolvem exercícios e acompanham desempenho, faltas e redações; professores cadastram exercícios, materiais e fazem chamada; a coordenação administra turmas, disciplinas e acessos.
 
-Requisitos e regras de negócio estão em `SPEC.md` (fonte da verdade). O plano de tarefas está em `TASKS.md`.
+Requisitos, regras de negócio, decisões técnicas e premissas em aberto estão em `SPEC.md` (fonte da verdade). O plano de tarefas está em `TASKS.md`. O modelo de dados está em `apps/api/prisma/schema.prisma`.
 
 ## Modo de trabalho: mentor
 
@@ -16,57 +16,82 @@ O dono do código sou eu: desenvolvedor backend voltando a programar depois de m
 - Quando houver mais de um caminho razoável, mostre 2 opções com trade-offs e recomende uma. Eu decido.
 - Passos pequenos, um commit por passo que funciona. Não avance para a próxima tarefa sem eu confirmar.
 - Se eu pedir algo que contradiz o `SPEC.md`, avise e pergunte se atualizamos o SPEC.
+- Se o plano mudar (estrutura, decisões, modelo de dados), atualize `SPEC.md`, `TASKS.md` e este arquivo junto com a mudança.
 - Perguntas conceituais: resposta curta com exemplo em TypeScript.
+- Sem pasta de ADR: decisões técnicas ficam no `SPEC.md` (§9).
 
 ## Stack
 
-- Node + TypeScript (modo `strict`), Express com `routing-controllers`.
-- PostgreSQL com migrations versionadas.
-- A decidir na tarefa T1.2 (registrar em `docs/adr/`): ORM ou query builder, container de injeção de dependência, biblioteca de validação, test runner, estratégia de autenticação.
-- Front-end: só depois da API (provável React + TypeScript).
+- Node 26 (`.nvmrc`) + TypeScript (modo `strict`), Express com `routing-controllers`.
+- PostgreSQL 17 (Docker Compose) com Prisma 7 (adapter `pg`) e migrations versionadas.
+- `typedi` (injeção de dependência), `class-validator` e `class-transformer` (validação), Jest com `ts-jest` e `supertest` (testes), `winston` (logs).
+- Ainda em aberto, a decidir nas tarefas indicadas: estratégia de autenticação (D10, T1.9) e algoritmo de hash de senha (D15, T1.8b). Ver `SPEC.md` §9.
+- Front-end: Next.js, só depois da API.
 
-## Arquitetura
+## Estrutura do repositório
 
-Clean architecture, organizada por módulo e, dentro de cada módulo, por camada:
+Monorepo com npm workspaces (`apps/*`). Hoje existe só `apps/api`; o front entra depois em `apps/web`.
 
 ```
-src/
-  modules/
-    identity/        # usuários, login, aprovação
-    academic/        # disciplinas, turmas, matrículas
-    questions/       # exercícios, listas, tentativas, dificuldade
-    attendance/      # chamadas e presenças
-    essays/          # redações e correção
-    materials/       # materiais de aula
-      domain/          # entidades, value objects, erros de domínio, interfaces (ports)
-      application/     # casos de uso (uma classe, um método execute)
-      infrastructure/  # repositórios, ORM, storage, hashing
-      presentation/    # controllers, DTOs, mapeamento de erros
-  shared/            # utilidades e tipos comuns
+apps/api/
+  prisma/
+    schema.prisma      # modelo de dados (fonte da verdade do banco)
+    migrations/        # versionadas, nunca editar uma já aplicada
+  src/
+    domain/            # entidades, value objects, enums, erros de domínio, interfaces (ports)
+      errors/          # erros base e tipados (sem conhecer HTTP)
+      identity/        # contexto atual; depois: academic/, questions/, attendance/, essays/, materials/
+        value-objects/
+    application/       # casos de uso (uma classe, um método execute). A criar na T1.6
+    http/              # controllers, DTOs, middlewares (presentation)
+      controllers/
+      middleware/
+    infrastructure/    # config (env), database (Prisma), logger, adapters (hash, e-mail, storage)
+    generated/         # client do Prisma (gerado, fora do Git)
+    app.ts             # monta o Express (createApp)
+    index.ts           # ponto de entrada
 ```
+
+Contextos de negócio: `identity` (contas, perfis, login, aprovação), `academic` (disciplinas, turmas, matrículas), `questions` (exercícios, listas, tentativas, dificuldade), `attendance` (chamadas), `essays` (redações), `materials`. Dentro de `domain/`, cada contexto ganha uma pasta; em `application/` e `infrastructure/`, seguir o mesmo nome de contexto quando houver mais de um.
 
 Regras:
 
-- Dependência só aponta para dentro: presentation e infrastructure dependem de application, que depende de domain. **Domain não importa framework, ORM nem Express.**
-- Repositórios e serviços externos são interfaces no domain/application, implementadas na infrastructure.
+- Dependência só aponta para dentro: http e infrastructure dependem de application, que depende de domain. **Domain não importa framework, ORM nem Express.** Nada de `generated/prisma` dentro de `domain/` ou `application/`.
+- Repositórios e serviços externos são interfaces (ports) no domain, implementadas na infrastructure.
 - Controllers são finos: validam a entrada (DTO), chamam um caso de uso e traduzem resultado ou erro.
 - Autorização de negócio (quem pode o quê) fica no caso de uso, não só em guards.
 - Erros de domínio tipados, traduzidos para HTTP em um único error handler.
+- Se os casos de uso podem ou não usar decorators do `typedi`: em aberto (D19).
+
+## Modelo de dados
+
+- `users` guarda só a conta (nome, e-mail, senha, telefone, papel, status). Dados específicos ficam em `students` (aluno) e `staff_profiles` (professor e coordenação). Não colocar campos de aluno em `users`.
+- Dois estados: `users.status` (conta: `ACTIVE`, `INACTIVE`) e `students.approval_status` (`PENDING`, `APPROVED`, `REJECTED`).
+- **Não existe cadastro público.** Toda conta nasce de um convite (`invitations`) criado pela coordenação com e-mail e telefone, que o convidado não pode alterar. A conta só é criada quando o convite é aceito; o convite é de uso único, com validade e revogável. O papel do gestor é `COORDINATOR`.
+- O e-mail não é verificado e serve só para login.
+- A idade do aluno não é armazenada; calcula-se a partir de `birth_date`.
+- A dificuldade do exercício não é coluna; é agregação sobre `attempts`.
+- Índices únicos parciais e `CHECK` que o Prisma não declara entram como SQL manual na migration (lista no `SPEC.md` §7.3). Como as migrations já foram aplicadas, mudanças no schema viram migrations novas.
 
 ## Convenções
 
 - Código e nomes de identificadores em inglês; documentação e comentários de negócio em português. Glossário no `SPEC.md`.
-- IDs em UUID. Datas de calendário (chamada) como `DATE`, sem fuso; fuso de referência America/Recife.
+- Prisma: modelos em PascalCase singular, tabelas e colunas em `snake_case` via `@@map` e `@map`.
+- IDs em UUID. Datas de calendário (chamada, nascimento) como `DATE`, sem fuso; fuso de referência America/Recife.
 - Nunca editar uma migration já aplicada: criar outra.
 - Sem segredos no repositório. Sem dados pessoais nos logs (há menores de idade).
+- Prettier: 80 colunas, aspas duplas, ponto e vírgula, vírgula final. ESLint com `typescript-eslint`; `any` gera aviso.
+- Dependências são declaradas no workspace que as usa (`apps/api`), não na raiz. Versões exatas (`save-exact` no `.npmrc`).
 
 ## Regras de negócio que não podem quebrar
 
 - A primeira tentativa de um aluno em um exercício nunca é apagada nem alterada; a dificuldade deriva dela.
 - O gabarito nunca vai ao aluno antes de ele responder.
-- Aluno só vê os próprios dados; professor só vê as turmas que leciona; turma encerrada é somente leitura.
+- Aluno só acessa com conta `ACTIVE` e aprovação `APPROVED`; aluno pendente ou rejeitado só vê a tela de estado. A aprovação é conferida no banco a cada requisição, não no token. Aluno só vê os próprios dados; professor só vê as turmas que leciona; turma encerrada é somente leitura.
+- E-mail e telefone de um convite nunca vêm do corpo da requisição de aceite; o link do convite é segredo (não vai para log; consumir por `POST`).
 - Disciplinas e turmas são criadas pela coordenação. Nunca fixar nomes de disciplinas no código.
 - Fotos de redação e materiais são privados (URL assinada e temporária).
+- Tokens de uso único (convite, recuperação de senha): só o hash é guardado, com expiração.
 
 ## Qualidade
 
@@ -76,4 +101,30 @@ Regras:
 
 ## Comandos
 
-(preencher na tarefa T1.1: dev, build, lint, test, migrate)
+Rodar a partir da raiz do repositório, salvo indicação. Usar o Node do `.nvmrc` (`nvm use`).
+
+| O quê | Comando |
+|---|---|
+| Instalar dependências | `npm ci` |
+| Subir o banco | `docker compose up -d db` |
+| Servidor em desenvolvimento | `npm run dev:api` (compila e reinicia ao salvar) |
+| Build | `npm run build -w apps/api` |
+| Iniciar o build | `npm run start -w apps/api` |
+| Lint (raiz) | `npm run lint` |
+| Corrigir lint | `npm run lint:fix -w apps/api` |
+| Typecheck (raiz) | `npm run typecheck` |
+| Formatar | `npm run format -w apps/api` |
+| Testes | `npm test -w apps/api` |
+
+Prisma (rodar dentro de `apps/api`; o arquivo de configuração tem nome diferente do padrão, então é preciso passar `--config`):
+
+| O quê | Comando |
+|---|---|
+| Gerar o client | `npx prisma generate --config prisma7.config.ts` |
+| Criar e aplicar migration (dev) | `npx prisma migrate dev --name <nome> --config prisma7.config.ts` |
+| Aplicar migrations existentes | `npx prisma migrate deploy --config prisma7.config.ts` |
+| Validar o schema | `npx prisma validate --config prisma7.config.ts` |
+
+Variáveis de ambiente: copiar `apps/api/.env.example` para `apps/api/.env` (ainda a criar, T1.3b). `DATABASE_URL` é obrigatória; `PORT` padrão 3000.
+
+Pendente na T1.1b: script `test` na raiz, `.env.example`, geração automática do client Prisma.

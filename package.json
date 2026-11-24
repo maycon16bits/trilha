@@ -11,9 +11,5 @@
     "dev:api": "npm run dev -w apps/api",
     "lint": "npm run lint --workspaces --if-present",
     "typecheck": "npm run typecheck --workspaces --if-present"
-  },
-  "dependencies": {
-    "routing-controllers": "0.11.3",
-    "winston": "3.19.0"
   }
 }
