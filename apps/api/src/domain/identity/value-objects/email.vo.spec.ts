@@ -7,22 +7,15 @@ describe("Email", () => {
   });
 
   it("Remove spaces and convert to lowercase.", () => {
-    expect(Email.create("  Maria@Exemplo.COM ").value).toBe(
-      "maria@exemplo.com",
-    );
+    expect(Email.create("  Maria@Exemplo.COM ").value).toBe("maria@exemplo.com");
   });
 
-  it.each(["", "   ", "sem-arroba", "a@b", "a b@c.com", "@c.com", "a@@c.com"])(
-    "rejeita %p",
-    (invalid) => {
-      expect(() => Email.create(invalid)).toThrow(InvalidEmailError);
-    },
-  );
+  it.each(["", "   ", "sem-arroba", "a@b", "a b@c.com", "@c.com", "a@@c.com"])("rejeita %p", (invalid) => {
+    expect(() => Email.create(invalid)).toThrow(InvalidEmailError);
+  });
 
   it("Rejects emails with more than 254 characters.", () => {
-    expect(() => Email.create(`${"a".repeat(250)}@b.com`)).toThrow(
-      InvalidEmailError,
-    );
+    expect(() => Email.create(`${"a".repeat(250)}@b.com`)).toThrow(InvalidEmailError);
   });
 
   it("Compare by value, not by reference.", () => {

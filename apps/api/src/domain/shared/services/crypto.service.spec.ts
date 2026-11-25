@@ -21,10 +21,7 @@ describe("Crypto Service", () => {
   });
 
   it("should create a hash with salt", async () => {
-    const hash = await cryptoService.createHashWithSalt(
-      "12345121213123812381937128371983719283796",
-      "salt",
-    );
+    const hash = await cryptoService.createHashWithSalt("12345121213123812381937128371983719283796", "salt");
     expect(typeof hash).toBe("string");
     expect(hash).toHaveLength(128);
   });

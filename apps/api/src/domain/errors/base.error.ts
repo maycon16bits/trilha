@@ -3,12 +3,7 @@ export abstract class BaseError extends Error {
   public readonly code: string;
   public readonly details?: unknown;
 
-  constructor(
-    message: string,
-    statusCode: number,
-    code: string,
-    details?: unknown,
-  ) {
+  constructor(message: string, statusCode: number, code: string, details?: unknown) {
     super(message);
     this.name = new.target.name;
     this.statusCode = statusCode;

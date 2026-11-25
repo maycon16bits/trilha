@@ -1,13 +1,6 @@
 import "reflect-metadata";
 import { plainToInstance } from "class-transformer";
-import {
-  IsInt,
-  IsNotEmpty,
-  IsString,
-  Max,
-  Min,
-  validateSync,
-} from "class-validator";
+import { IsInt, IsNotEmpty, IsString, Max, Min, validateSync } from "class-validator";
 
 export class Env {
   @IsInt()
@@ -26,10 +19,7 @@ export function loadEnv(source: NodeJS.ProcessEnv = process.env): Env {
 
   if (errors.length > 0) {
     const details = errors
-      .map(
-        (error) =>
-          `- ${error.property}: ${Object.values(error.constraints ?? {}).join(", ")}`,
-      )
+      .map((error) => `- ${error.property}: ${Object.values(error.constraints ?? {}).join(", ")}`)
       .join("\n");
     throw new Error(`Variáveis de ambiente inválidas:\n${details}`);
   }

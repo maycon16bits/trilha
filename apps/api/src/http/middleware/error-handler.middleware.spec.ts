@@ -65,32 +65,23 @@ describe("tratamento global de erros", () => {
   });
 
   it("DTO inválido devolve 400 com os campos errados", async () => {
-    const res = await request(app)
-      .post("/test/validate")
-      .send({ email: "nao-e-email", age: 0 });
+    const res = await request(app).post("/test/validate").send({ email: "nao-e-email", age: 0 });
 
     expect(res.status).toBe(400);
     expect(res.body.error.code).toBe("VALIDATION_ERROR");
     expect(res.body.error.details).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({ field: "email" }),
-        expect.objectContaining({ field: "age" }),
-      ]),
+      expect.arrayContaining([expect.objectContaining({ field: "email" }), expect.objectContaining({ field: "age" })]),
     );
   });
 
   it("campo fora do DTO é recusado", async () => {
-    const res = await request(app)
-      .post("/test/validate")
-      .send({ email: "a@b.com", age: 20, role: "COORDINATOR" });
+    const res = await request(app).post("/test/validate").send({ email: "a@b.com", age: 20, role: "COORDINATOR" });
 
     expect(res.status).toBe(400);
   });
 
   it("DTO válido passa", async () => {
-    const res = await request(app)
-      .post("/test/validate")
-      .send({ email: "a@b.com", age: 20 });
+    const res = await request(app).post("/test/validate").send({ email: "a@b.com", age: 20 });
 
     expect(res.status).toBe(200);
   });
@@ -105,10 +96,7 @@ describe("tratamento global de erros", () => {
   });
 
   it("JSON malformado vira 400", async () => {
-    const res = await request(app)
-      .post("/test/validate")
-      .set("Content-Type", "application/json")
-      .send("{ invalido");
+    const res = await request(app).post("/test/validate").set("Content-Type", "application/json").send("{ invalido");
 
     expect(res.status).toBe(400);
   });

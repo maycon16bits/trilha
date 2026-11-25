@@ -15,14 +15,12 @@ describe("Phone Value Object", () => {
       expect(phone.value).toBe(expected);
     });
 
-    it.each([
-      "123456789",
-      "81 98765",
-      "+1 202 555 0123",
-      "00 55 81 98765-4321",
-    ])("should throw InvalidPhoneError for %s", (input) => {
-      expect(() => Phone.create(input)).toThrow(InvalidPhoneError);
-    });
+    it.each(["123456789", "81 98765", "+1 202 555 0123", "00 55 81 98765-4321"])(
+      "should throw InvalidPhoneError for %s",
+      (input) => {
+        expect(() => Phone.create(input)).toThrow(InvalidPhoneError);
+      },
+    );
   });
 
   describe("value", () => {

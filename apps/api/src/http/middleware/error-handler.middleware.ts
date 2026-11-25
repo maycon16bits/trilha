@@ -1,9 +1,5 @@
 import type { NextFunction, Request, Response } from "express";
-import {
-  ExpressErrorMiddlewareInterface,
-  HttpError,
-  Middleware,
-} from "routing-controllers";
+import { ExpressErrorMiddlewareInterface, HttpError, Middleware } from "routing-controllers";
 import { Service } from "typedi";
 import { BaseError } from "../../domain/errors/base.error";
 
@@ -17,18 +13,11 @@ type ValidationIssue = {
 
 function validationIssuesOf(error: HttpError): ValidationIssue[] | undefined {
   const issues = (error as HttpError & { errors?: unknown }).errors;
-  return Array.isArray(issues) && issues.length > 0
-    ? (issues as ValidationIssue[])
-    : undefined;
+  return Array.isArray(issues) && issues.length > 0 ? (issues as ValidationIssue[]) : undefined;
 }
 
 function hasStatus(error: unknown): error is { status: number } {
-  return (
-    typeof error === "object" &&
-    error !== null &&
-    "status" in error &&
-    typeof error.status === "number"
-  );
+  return typeof error === "object" && error !== null && "status" in error && typeof error.status === "number";
 }
 
 function toResponse(error: unknown): { status: number; body: ErrorBody } {
@@ -87,12 +76,7 @@ function toResponse(error: unknown): { status: number; body: ErrorBody } {
 @Middleware({ type: "after" })
 @Service()
 export class ErrorHandlerMiddleware implements ExpressErrorMiddlewareInterface {
-  error(
-    error: unknown,
-    _req: Request,
-    res: Response,
-    next: NextFunction,
-  ): void {
+  error(error: unknown, _req: Request, res: Response, next: NextFunction): void {
     if (res.headersSent) return next(error);
 
     const { status, body } = toResponse(error);

@@ -60,12 +60,9 @@ describe("User.create", () => {
     expect(() => makeUser({ name: "a".repeat(151) })).toThrow(InvalidUserError);
   });
 
-  it.each(["", "   "])(
-    "should reject an empty password hash (%p)",
-    (passwordHash) => {
-      expect(() => makeUser({ passwordHash })).toThrow(InvalidUserError);
-    },
-  );
+  it.each(["", "   "])("should reject an empty password hash (%p)", (passwordHash) => {
+    expect(() => makeUser({ passwordHash })).toThrow(InvalidUserError);
+  });
 
   it("should not be affected when the caller modifies the original date", () => {
     const now = new Date(NOW);
@@ -135,9 +132,7 @@ describe("Status transitions", () => {
   });
 
   it("should reject reactivating an already active user", () => {
-    expect(() => makeUser().reactivate(LATER)).toThrow(
-      InvalidStatusTransitionError,
-    );
+    expect(() => makeUser().reactivate(LATER)).toThrow(InvalidStatusTransitionError);
   });
 
   it("should not change anything when a status transition is rejected", () => {

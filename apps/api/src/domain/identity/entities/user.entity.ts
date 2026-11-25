@@ -107,9 +107,7 @@ export class User extends BaseEntity<UserProps> {
 
   private changeStatus(from: UserStatus, to: UserStatus, now: Date): void {
     if (this.props.status !== from) {
-      throw new InvalidStatusTransitionError(
-        `Não é possível ir de ${this.props.status} para ${to}`,
-      );
+      throw new InvalidStatusTransitionError(`Não é possível ir de ${this.props.status} para ${to}`);
     }
     this.props.status = to;
     this.props.updatedAt = new Date(now);
@@ -117,9 +115,7 @@ export class User extends BaseEntity<UserProps> {
 
   private static assertValidName(name: string): void {
     if (name.length === 0 || name.length > User.NAME_MAX_LENGTH) {
-      throw new InvalidUserError(
-        `O nome deve ter entre 1 e ${User.NAME_MAX_LENGTH} caracteres`,
-      );
+      throw new InvalidUserError(`O nome deve ter entre 1 e ${User.NAME_MAX_LENGTH} caracteres`);
     }
   }
 

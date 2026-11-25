@@ -23,9 +23,7 @@ export class Phone {
 
   private static validate(phone: string): void {
     if (!Phone.RULE.test(phone)) {
-      throw new InvalidPhoneError(
-        "Formato de telefone errado. Por favor, utilize o formato (xx) xxxxx-xxxx.",
-      );
+      throw new InvalidPhoneError("Formato de telefone errado. Por favor, utilize o formato (xx) xxxxx-xxxx.");
     }
   }
 }

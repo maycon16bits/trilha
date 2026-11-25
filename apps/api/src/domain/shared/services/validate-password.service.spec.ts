@@ -26,9 +26,7 @@ describe("ValidatePassword Service", () => {
       "aaaaaaaaa", // Does not contain numbers
       `A1${"a".repeat(71)}`, // Exceeds maximum length (72 characters)
     ])("should reject password: %s", (password) => {
-      expect(() => ValidatePasswordService.validate(password)).toThrow(
-        WeakPasswordError,
-      );
+      expect(() => ValidatePasswordService.validate(password)).toThrow(WeakPasswordError);
     });
   });
 });

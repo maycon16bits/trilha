@@ -26,9 +26,7 @@ export class Email {
 
   private static validate(email: string): void {
     if (email.length > Email.MAX_LENGTH || !Email.PATTERN.test(email)) {
-      throw new InvalidEmailError(
-        "Por favor, informe um endereço de e-mail válido.",
-      );
+      throw new InvalidEmailError("Por favor, informe um endereço de e-mail válido.");
     }
   }
 }
