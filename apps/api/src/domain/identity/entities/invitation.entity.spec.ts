@@ -3,7 +3,7 @@ import { InvitationAlreadyUsedError } from "../../errors/invitation-already-used
 import { InvitationExpiredError } from "../../errors/invitation-expired.error";
 import { InvitationRevokedError } from "../../errors/invitation-revoked.error";
 import { UniqueEntityId } from "../../shared/unique-entity-id";
-import { InvitationStatus, UserRole } from "../enums";
+import { UserRole, InvitationStatus } from "../enums";
 import { Email, Phone } from "../value-objects";
 import { CreateInvitationInput, Invitation } from "./invitation.entity";
 
