@@ -77,13 +77,14 @@ export class CryptoService {
       return null;
     }
 
-    const params = {
-      N: Number(match[1]),
-      r: Number(match[2]),
-      p: Number(match[3]),
-    };
-    const salt = Buffer.from(match[4], "hex");
-    const hash = Buffer.from(match[5], "hex");
+    const [, n, r, p, saltHex, hashHex] = match;
+    if (!n || !r || !p || !saltHex || !hashHex) {
+      return null;
+    }
+
+    const params = { N: Number(n), r: Number(r), p: Number(p) };
+    const salt = Buffer.from(saltHex, "hex");
+    const hash = Buffer.from(hashHex, "hex");
 
     const valid =
       params.N >= 2 &&
