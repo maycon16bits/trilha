@@ -25,7 +25,8 @@ O dono do código sou eu: desenvolvedor backend voltando a programar depois de m
 - Node 26 (`.nvmrc`) + TypeScript (modo `strict`), Express com `routing-controllers`.
 - PostgreSQL 17 (Docker Compose) com Prisma 7 (adapter `pg`) e migrations versionadas.
 - `typedi` (injeção de dependência), `class-validator` e `class-transformer` (validação), Jest com `ts-jest` e `supertest` (testes), `winston` (logs).
-- Ainda em aberto, a decidir nas tarefas indicadas: estratégia de autenticação (D10, T1.9) e algoritmo de hash de senha (D15, T1.8b). Ver `SPEC.md` §9.
+- Hash de senha: scrypt do `node:crypto` (D15), com salt e parâmetros guardados no próprio hash. Política de senha: D14.
+- Ainda em aberto, a decidir nas tarefas indicadas: estratégia de autenticação (D10, T1.9). Ver `SPEC.md` §9.
 - Front-end: Next.js, só depois da API.
 
 ## Estrutura do repositório
@@ -66,11 +67,13 @@ Regras:
 ## Modelo de dados
 
 - `users` guarda só a conta (nome, e-mail, senha, telefone, papel, status). Dados específicos ficam em `students` (aluno) e `staff_profiles` (professor e coordenação). Não colocar campos de aluno em `users`.
+- Todo aluno tem exatamente um contato de emergência (`emergency_contacts`: nome, parentesco, telefone e `is_guardian`, que diz se a pessoa é o responsável pelo aluno). Professor e coordenação não têm. O banco não impede aluno sem contato: é regra do caso de uso (RN-24).
 - Dois estados: `users.status` (conta: `ACTIVE`, `INACTIVE`) e `students.approval_status` (`PENDING`, `APPROVED`, `REJECTED`).
-- **Não existe cadastro público.** Toda conta nasce de um convite (`invitations`) criado pela coordenação com e-mail e telefone, que o convidado não pode alterar. A conta só é criada quando o convite é aceito; o convite é de uso único, com validade e revogável. O papel do gestor é `COORDINATOR`.
+- **Não existe cadastro público.** Toda conta nasce de um convite (`invitations`) criado pela coordenação com e-mail e telefone, que o convidado não pode alterar. Aceitar o convite é enviar o formulário: a conta (`users` + perfil) nasce nesse momento, e a senha nunca é guardada antes (o convite não é uma conta). O convite é de uso único, com validade e revogável. O papel do gestor é `COORDINATOR`.
 - O e-mail não é verificado e serve só para login.
 - A idade do aluno não é armazenada; calcula-se a partir de `birth_date`.
 - A dificuldade do exercício não é coluna; é agregação sobre `attempts`.
+- O enunciado do exercício é uma lista ordenada de blocos (`question_blocks`), no mínimo 3, e o último é o enunciado (RN-26). Os tipos de bloco ainda são provisórios (D25).
 - Índices únicos parciais e `CHECK` que o Prisma não declara entram como SQL manual na migration (lista no `SPEC.md` §7.3). Como as migrations já foram aplicadas, mudanças no schema viram migrations novas.
 
 ## Convenções
@@ -80,7 +83,7 @@ Regras:
 - IDs em UUID. Datas de calendário (chamada, nascimento) como `DATE`, sem fuso; fuso de referência America/Recife.
 - Nunca editar uma migration já aplicada: criar outra.
 - Sem segredos no repositório. Sem dados pessoais nos logs (há menores de idade).
-- Prettier: 80 colunas, aspas duplas, ponto e vírgula, vírgula final. ESLint com `typescript-eslint`; `any` gera aviso.
+- Prettier: 120 colunas, aspas duplas, ponto e vírgula, vírgula final. ESLint com `typescript-eslint`; `any` gera aviso.
 - Dependências são declaradas no workspace que as usa (`apps/api`), não na raiz. Versões exatas (`save-exact` no `.npmrc`).
 
 ## Regras de negócio que não podem quebrar
@@ -89,6 +92,7 @@ Regras:
 - O gabarito nunca vai ao aluno antes de ele responder.
 - Aluno só acessa com conta `ACTIVE` e aprovação `APPROVED`; aluno pendente ou rejeitado só vê a tela de estado. A aprovação é conferida no banco a cada requisição, não no token. Aluno só vê os próprios dados; professor só vê as turmas que leciona; turma encerrada é somente leitura.
 - E-mail e telefone de um convite nunca vêm do corpo da requisição de aceite; o link do convite é segredo (não vai para log; consumir por `POST`).
+- Só a coordenação justifica falta; o professor vê a justificativa e pode corrigir um lançamento errado de chamada (RN-25).
 - Disciplinas e turmas são criadas pela coordenação. Nunca fixar nomes de disciplinas no código.
 - Fotos de redação e materiais são privados (URL assinada e temporária).
 - Tokens de uso único (convite, recuperação de senha): só o hash é guardado, com expiração.
@@ -116,14 +120,14 @@ Rodar a partir da raiz do repositório, salvo indicação. Usar o Node do `.nvmr
 | Formatar | `npm run format -w apps/api` |
 | Testes | `npm test -w apps/api` |
 
-Prisma (rodar dentro de `apps/api`; o arquivo de configuração tem nome diferente do padrão, então é preciso passar `--config`):
+Prisma (rodar dentro de `apps/api`; o Prisma encontra o `prisma7.config.ts` sozinho, não precisa de `--config`):
 
 | O quê | Comando |
 |---|---|
-| Gerar o client | `npx prisma generate --config prisma7.config.ts` |
-| Criar e aplicar migration (dev) | `npx prisma migrate dev --name <nome> --config prisma7.config.ts` |
-| Aplicar migrations existentes | `npx prisma migrate deploy --config prisma7.config.ts` |
-| Validar o schema | `npx prisma validate --config prisma7.config.ts` |
+| Gerar o client | `npx prisma generate` |
+| Criar e aplicar migration (dev) | `npx prisma migrate dev --name <nome>` |
+| Aplicar migrations existentes | `npx prisma migrate deploy` |
+| Validar o schema | `npx prisma validate` |
 
 Variáveis de ambiente: copiar `apps/api/.env.example` para `apps/api/.env` (ainda a criar, T1.3b). `DATABASE_URL` é obrigatória; `PORT` padrão 3000.
 

@@ -170,7 +170,7 @@ O aluno entrega o papel ao professor de redação. O professor fotografa, sobe n
 
 ## 7. Modelo de dados
 
-A fonte da verdade do modelo é `apps/api/prisma/schema.prisma` (23 tabelas, 12 enums). Esta seção resume o que cada tabela guarda e as decisões de modelagem. Se divergir, atualize os dois.
+A fonte da verdade do modelo é `apps/api/prisma/schema.prisma` (23 tabelas, 13 enums). Esta seção resume o que cada tabela guarda e as decisões de modelagem. Se divergir, atualize os dois.
 
 ### 7.1 Decisões de modelagem
 
@@ -202,7 +202,7 @@ Nomes de tabela em inglês, `snake_case`; colunas em `snake_case` no banco e `ca
 
 **Exercícios**
 - `questions`: subject_id, topic_id, source (`ENEM`, `OTHER_EXAM`, `AUTHORED`), exam_year, source_reference, created_by, is_archived, timestamps.
-- `question_blocks`: question_id, position, type, text, image_key. Único (exercício, posição). Os tipos de bloco: D25.
+- `question_blocks`: question_id, position, type (`QuestionBlockType`, lista provisória), text, image_key. Único (exercício, posição). Os tipos de bloco: D25.
 - `choices`: question_id, letter, text, is_correct. Único (exercício, letra).
 - `question_lists` e `question_list_items`: lista (class_subject_id, título, data da aula, publicada) e itens com posição.
 - `attempts` (só se acrescenta): student_id, question_id, choice_id, class_group_id, question_list_id (opcional), is_correct, is_first, reset_at, created_at.
@@ -215,7 +215,7 @@ Nomes de tabela em inglês, `snake_case`; colunas em `snake_case` no banco e `ca
 - `essay_annotations`: essay_id, x, y, width, height (proporção de 0 a 1 da imagem), text, competency (1 a 5, opcional).
 - `audit_logs`: actor_id, action, entity_type, entity_id, details (JSON, sem dados pessoais), created_at.
 
-> **Pendente:** o `schema.prisma` ainda tem `guardians`, `questions.statement` e `question_images`. Uma nova migration deve trocá-los por `emergency_contacts` e `question_blocks` (as migrations já aplicadas não se editam).
+> **Pendente:** o `schema.prisma` (v1.3) já tem `emergency_contacts`, `question_blocks` e o enum `QuestionBlockType`, mas as migrations aplicadas ainda têm `guardians`, `questions.statement` e `question_images`. Falta a migration nova (T1.7a); as já aplicadas não se editam.
 
 ### 7.3 O que o Prisma não declara (SQL manual na migration)
 
