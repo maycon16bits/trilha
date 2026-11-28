@@ -1,8 +1,9 @@
 # SPEC — Plataforma de estudo e acompanhamento (curso pré-ENEM)
 
-Versão 1.2 — 22/11/2026. Fonte da verdade dos requisitos. Se o código divergir deste arquivo, um dos dois está errado: atualize aqui antes de mudar o comportamento.
+Versão 1.3 — 27/11/2026. Fonte da verdade dos requisitos. Se o código divergir deste arquivo, um dos dois está errado: atualize aqui antes de mudar o comportamento.
 
 **Histórico**
+- 1.3 (27/11/2026): contato de emergência obrigatório para todo aluno (substitui o `Guardian`; pode ou não ser o responsável); só a coordenação justifica falta, e o professor vê a justificativa e corrige lançamentos errados; enunciado do exercício em blocos ordenados (mínimo 3, o último é o enunciado); consentimento do responsável do menor passa a ser automático até a D24; esclarecido que a conta nasce no envio do formulário do convite; D14 e D15 decididas (política de senha e scrypt).
 - 1.2 (22/11/2026): entrada de usuários por **convite exclusivo** (sem cadastro público); sem confirmação de e-mail (o e-mail só serve para login); aprovação do aluno pela coordenação mantida; professor entra por convite do tipo `TEACHER`; nova tabela `invitations`; `users.status` reduzido a `ACTIVE` e `INACTIVE`.
 - 1.1 (22/11/2026): usuário dividido em `users` + perfis (`students`, `staff_profiles`); dados escolares do aluno; status separado em status da conta e aprovação do aluno; modelo de dados agora referencia o `schema.prisma`; ADR substituído por decisões registradas neste arquivo (§9).
 - 1.0 (20/11/2026): versão inicial.
@@ -27,14 +28,14 @@ Documentação em português; código em inglês.
 | Usuário (conta de acesso, comum a todos) | `User` |
 | Perfil do aluno | `Student` |
 | Perfil de professor e coordenação | `StaffProfile` |
-| Responsável do aluno menor | `Guardian` |
+| Contato de emergência do aluno (pode ser o responsável) | `EmergencyContact` |
 | Aluno / Professor / Coordenação | `STUDENT` / `TEACHER` / `COORDINATOR` (papéis) |
 | Disciplina | `Subject` |
 | Assunto | `Topic` |
 | Turma | `ClassGroup` (evita a palavra reservada `class`) |
 | Disciplina da turma (com professor) | `ClassSubject` |
 | Matrícula | `Enrollment` |
-| Exercício / Alternativa | `Question` / `Choice` |
+| Exercício / Bloco do enunciado / Alternativa | `Question` / `QuestionBlock` / `Choice` |
 | Lista de exercícios | `QuestionList` |
 | Tentativa | `Attempt` |
 | Chamada / Presença | `RollCall` / `Attendance` |
@@ -53,8 +54,9 @@ Documentação em português; código em inglês.
 | Cadastrar exercícios | — | ✔ (disciplinas que leciona) | — |
 | Montar listas de exercícios | — | ✔ (suas turmas) | — |
 | Subir materiais | — | ✔ (suas turmas) | — |
-| Fazer chamada | — | ✔ (suas turmas) | ✔ |
-| Justificar falta | — | ✔ (suas turmas) | ✔ |
+| Fazer chamada e corrigir lançamento errado (presente ↔ falta) | — | ✔ (suas turmas) | ✔ |
+| Justificar falta | — | — | ✔ |
+| Ver faltas e justificativas | ✔ (só as suas) | ✔ (suas turmas) | ✔ (todas) |
 | Corrigir redação | — | ✔ (disciplina com `permite_redacao`) | — |
 | Ver desempenho da turma | — | ✔ (suas turmas) | ✔ (todas) |
 | Gerir disciplinas, turmas, matrículas | — | — | ✔ |
@@ -67,7 +69,7 @@ Não existe cadastro público: toda conta nasce de um **convite exclusivo**, cri
 ### 4.1 Entrada de alunos
 1. **Entrevista e seleção** acontecem fora da plataforma. Na entrevista a coordenação obtém o e-mail e o telefone do aluno.
 2. Selecionado o aluno, a coordenação cria o **convite** informando e-mail e telefone, e envia o link por e-mail ou WhatsApp.
-3. O aluno abre o link e vê e-mail e telefone **já preenchidos e bloqueados**. Se estiverem errados, ele fala com a coordenação (que revoga e reemite o convite). Ele preenche o restante: nome, senha, data de nascimento, escolaridade, escola em que estuda ou estudou (e dados do responsável, se menor de 18 anos; ver D24).
+3. O aluno abre o link e vê e-mail e telefone **já preenchidos e bloqueados**. Se estiverem errados, ele fala com a coordenação (que revoga e reemite o convite). Ele preenche o restante: nome, senha, data de nascimento, escolaridade, escola em que estuda ou estudou e o **contato de emergência** (nome, parentesco e telefone de um parente próximo, informando se é o responsável pelo aluno).
 4. Ao enviar o formulário a conta é criada (`users.status = ACTIVE`) com `students.approval_status = PENDING`. O convite é consumido.
 5. A coordenação confere os dados num painel e **aprova** (`APPROVED`) ou **rejeita** (`REJECTED`, com motivo). O que acontece depois de uma rejeição: D21. A matrícula em turma é tratada em D13.
 6. Enquanto o aluno não for aprovado, ele consegue entrar, mas só vê a tela "aguardando aprovação". Aprovado, acessa a plataforma.
@@ -82,10 +84,10 @@ O fluxo é o mesmo convite, com tipo `TEACHER`: a coordenação informa e-mail e
 4. Ao fim do ano, **encerra a turma**: ela vira somente leitura e o histórico fica guardado. Em 2027 criam-se turmas novas e novas matrículas. O banco de exercícios continua o mesmo.
 
 ### 4.4 Exercícios
-O professor cadastra o exercício, que pertence à disciplina (catálogo), não à turma. O aluno responde pela lista da aula ou pelo banco com filtros. Após responder, vê a correção. Pode refazer ou resetar suas respostas.
+O professor cadastra o exercício, que pertence à disciplina (catálogo), não à turma. O enunciado é montado em blocos ordenados (RN-26). O aluno responde pela lista da aula ou pelo banco com filtros. Após responder, vê a correção. Pode refazer ou resetar suas respostas.
 
 ### 4.5 Chamada
-Uma chamada por turma e por dia. O professor marca presente ou falta para cada aluno matriculado, e faltas podem ser justificadas depois.
+Uma chamada por turma e por dia. O professor marca presente ou falta para cada aluno matriculado e pode corrigir um lançamento errado. A **justificativa de falta é exclusiva da coordenação**: o aluno vai presencialmente à coordenação, que o ouve e registra a justificativa. O professor vê a justificativa, mas não tem a opção de justificar.
 
 ### 4.6 Redação
 O aluno entrega o papel ao professor de redação. O professor fotografa, sobe na plataforma vinculando ao aluno, marca trechos da imagem com comentários, lança a nota de cada competência e a avaliação geral, e finaliza. Só então o aluno vê.
@@ -93,7 +95,7 @@ O aluno entrega o papel ao professor de redação. O professor fotografa, sobe n
 ## 5. Requisitos funcionais
 
 **Identidade**
-- RF-01 Cadastro do aluno pelo link de convite: e-mail e telefone vêm do convite e não podem ser alterados; o aluno informa nome, senha, data de nascimento, escolaridade, escola em que estuda ou estudou (e responsável, se menor; ver D24).
+- RF-01 Cadastro do aluno pelo link de convite: e-mail e telefone vêm do convite e não podem ser alterados; o aluno informa nome, senha, data de nascimento, escolaridade, escola em que estuda ou estudou e o contato de emergência obrigatório (RN-24).
 - RF-02 Coordenação cria convites individuais (e-mail e telefone, para aluno ou professor), vê o estado de cada um (aberto, usado, revogado, expirado), revoga e reemite.
 - RF-03 Coordenação lista os alunos pendentes, confere os dados no painel, aprova ou rejeita com motivo.
 - RF-04 Cadastro do professor pelo link de convite do tipo `TEACHER` (mesmas regras do RF-01).
@@ -108,7 +110,7 @@ O aluno entrega o papel ao professor de redação. O professor fotografa, sobe n
 - RF-11 Um professor pode lecionar várias disciplinas e turmas.
 
 **Exercícios**
-- RF-12 Cadastro de exercício: disciplina, assunto, enunciado, alternativas (uma correta), origem (`ENEM`, `OTHER_EXAM`, `AUTHORED`), ano da prova e fonte (opcionais).
+- RF-12 Cadastro de exercício: disciplina, assunto, enunciado em blocos ordenados (RN-26; o professor pode incluir imagens), alternativas (uma correta), origem (`ENEM`, `OTHER_EXAM`, `AUTHORED`), ano da prova e fonte (opcionais).
 - RF-13 Professor cria e escolhe assuntos da sua disciplina.
 - RF-14 Editar e arquivar exercício. Não excluir se houver tentativas.
 - RF-15 Professor monta e publica listas de exercícios por disciplina da turma.
@@ -123,8 +125,8 @@ O aluno entrega o papel ao professor de redação. O professor fotografa, sobe n
 - RF-22 Dificuldade do exercício calculada automaticamente (RN-08).
 
 **Chamada**
-- RF-23 Professor registra a chamada do dia para a turma.
-- RF-24 Falta pode ser justificada, com texto.
+- RF-23 Professor registra a chamada do dia para a turma e pode corrigir lançamentos errados.
+- RF-24 A coordenação justifica a falta, com texto, depois de ouvir o aluno (RN-25). O professor apenas vê a justificativa.
 - RF-25 Aluno vê faltas do mês atual e o histórico completo.
 
 **Materiais**
@@ -155,13 +157,16 @@ O aluno entrega o papel ao professor de redação. O professor fotografa, sobe n
 - RN-14 Cada competência da redação vale 0, 40, 80, 120, 160 ou 200. A nota final é a soma (0 a 1000), calculada pelo sistema.
 - RN-15 Redação em rascunho não é visível ao aluno.
 - RN-16 Fotos de redação e materiais ficam em armazenamento privado, acessados por URL assinada e temporária.
-- RN-17 Aluno menor de 18 anos exige dados do responsável e consentimento registrado. **Em revisão (D24):** hoje o menor preenche o formulário sozinho, e a regra pode mudar depois de conversar com o curso.
+- RN-17 Para o aluno menor de 18 anos, o responsável **autoriza automaticamente**: não há registro de consentimento e não se exige que o contato de emergência seja o responsável. **Em revisão (D24):** a regra muda depois de conversar com o curso.
 - RN-18 Exercício com tentativas não pode ser excluído. Alterar o gabarito recalcula `is_correct` das tentativas e gera registro de auditoria.
 - RN-19 A idade do aluno não é armazenada: é calculada a partir da data de nascimento e da data de referência (America/Recife). Quem faz 18 anos hoje já é maior de idade.
 - RN-20 Tokens de uso único (convite e recuperação de senha) têm expiração, são consumidos uma vez e só o **hash** é guardado. O token em texto puro aparece uma única vez, para a coordenação, na criação.
 - RN-21 Um aluno só tem perfil `students` se `users.role = STUDENT`; professor e coordenação só têm `staff_profiles`. O banco não impede isso sozinho: é regra do caso de uso, coberta por teste de integração.
 - RN-22 **Convite exclusivo:** não existe cadastro público. O convite é individual (e-mail e telefone da pessoa), de uso único, com validade (D23) e revogável pela coordenação. E-mail e telefone vêm do convite, nunca do corpo da requisição de aceite. Só pode haver um convite aberto por e-mail; reemitir revoga o anterior. Não se convida um e-mail que já tem conta.
 - RN-23 O e-mail não é verificado: serve apenas para login. Por isso o link do convite deve ser tratado como segredo (não registrar em log, consumir por `POST`) e a coordenação confere os dados na aprovação.
+- RN-24 **Contato de emergência:** todo aluno tem exatamente um, com nome, parentesco e telefone obrigatórios, e a indicação de se é o responsável pelo aluno. Professor e coordenação não têm. O banco não impede aluno sem contato: é regra do caso de uso (o aluno e o contato são criados juntos), coberta por teste.
+- RN-25 **Justificar falta** só a coordenação. O professor da turma vê a justificativa, mas não a cria nem a edita. O professor pode corrigir um lançamento errado de chamada (presente ↔ falta) das suas turmas; ao corrigir uma falta já justificada para presente, a justificativa é descartada e o fato é registrado em `audit_logs` (D26).
+- RN-26 **Enunciado em blocos:** o enunciado do exercício é uma lista ordenada de blocos, com no mínimo 3: título da questão, conteúdo (texto, imagem etc.) e enunciado. O enunciado é sempre o **último** bloco e é obrigatório. Os tipos de bloco e o que mais é obrigatório: D25.
 
 ## 7. Modelo de dados
 
@@ -171,10 +176,10 @@ A fonte da verdade do modelo é `apps/api/prisma/schema.prisma` (23 tabelas, 12 
 
 - **Usuário dividido em conta e perfis.** `users` guarda só o que vale para todos (nome, e-mail, senha, telefone, papel, status da conta). Os dados que mudam por perfil ficam em `students` (aluno) e `staff_profiles` (professor e coordenação). Matrícula, tentativa, falta e redação apontam para `students`; disciplina da turma, exercício, material e correção apontam para `staff_profiles`.
 - **Dois estados, dois lugares.** `users.status` é o estado da conta: `ACTIVE` ou `INACTIVE`. `students.approval_status` é a fila da coordenação: `PENDING`, `APPROVED`, `REJECTED`. As regras de acesso estão na RN-01.
-- **A conta só existe depois do convite ser aceito.** O convite (`invitations`) guarda e-mail, telefone e papel; não cria `users`. Por isso `users.password_hash` é sempre preenchido, e não há estado "convidado sem senha". O estado do convite (aberto, usado, revogado, expirado) é derivado de `used_at`, `revoked_at` e `expires_at`.
+- **A conta nasce quando o formulário do convite é enviado.** O convite (`invitations`) guarda e-mail, telefone e papel; ele **não é uma conta**, e abrir o link não exige ter conta. Aceitar o convite é enviar o formulário: nesse momento, numa única operação, são criados `users` (com o hash da senha) e o perfil (`students` com aprovação `PENDING`, ou `staff_profiles`), e o convite é marcado como usado. A senha nunca é guardada antes disso (nem em `invitations`), por isso `users.password_hash` é sempre preenchido e não há estado "convidado sem senha". A coordenação aprova ou rejeita **depois**, com a conta já criada. O estado do convite (aberto, usado, revogado, expirado) é derivado de `used_at`, `revoked_at` e `expires_at`.
 - **Idade derivada** (RN-19). Só se guarda `birth_date`.
 - **Dificuldade não é coluna.** É uma consulta de agregação sobre as primeiras tentativas (um bom exercício de SQL).
-- **Exclusão:** `RESTRICT` por padrão, para o histórico não sumir por acidente. `CASCADE` só em registros que não existem sem o pai (alternativas, imagens do enunciado, itens de lista, comentários de redação, responsável, tokens).
+- **Exclusão:** `RESTRICT` por padrão, para o histórico não sumir por acidente. `CASCADE` só em registros que não existem sem o pai (alternativas, blocos do enunciado, itens de lista, comentários de redação, contato de emergência, tokens).
 
 ### 7.2 Tabelas
 
@@ -183,7 +188,7 @@ Nomes de tabela em inglês, `snake_case`; colunas em `snake_case` no banco e `ca
 **Identidade**
 - `users`: id, role, status (`ACTIVE`, `INACTIVE`), name, email (único, já normalizado, só para login), password_hash, phone, timestamps.
 - `students` (1:1 com `users`): birth_date, education_level, school_name, school_situation (`STUDYING` ou `FINISHED`), school_type (opcional), approval_status, approved_by, approved_at, rejection_reason, timestamps.
-- `guardians` (1:1 com `students`): nome, parentesco, contato, consentimento_em (`consented_at`), versão da política (`policy_version`).
+- `emergency_contacts` (1:1 com `students`, obrigatório): name, relationship, phone, is_guardian (indica se é o responsável pelo aluno). Sem campos de consentimento por enquanto (D24).
 - `staff_profiles` (1:1 com `users`): qualification, hired_at, timestamps. Campos além desses: D18.
 - `invitations`: role, email, phone (os dois travados para o convidado), token_hash, invited_by (→ `staff_profiles`), expires_at, used_at, revoked_at, user_id (conta criada ao aceitar).
 - `auth_tokens`: user_id, type (hoje só `PASSWORD_RESET`, reservado para D16), token_hash, expires_at, used_at.
@@ -196,8 +201,8 @@ Nomes de tabela em inglês, `snake_case`; colunas em `snake_case` no banco e `ca
 - `enrollments`: student_id, class_group_id, status (`ACTIVE`, `WITHDRAWN`). Único (aluno, turma).
 
 **Exercícios**
-- `questions`: subject_id, topic_id, statement (Markdown com KaTeX), source (`ENEM`, `OTHER_EXAM`, `AUTHORED`), exam_year, source_reference, created_by, is_archived, timestamps.
-- `question_images`: imagens anexas ao enunciado.
+- `questions`: subject_id, topic_id, source (`ENEM`, `OTHER_EXAM`, `AUTHORED`), exam_year, source_reference, created_by, is_archived, timestamps.
+- `question_blocks`: question_id, position, type, text, image_key. Único (exercício, posição). Os tipos de bloco: D25.
 - `choices`: question_id, letter, text, is_correct. Único (exercício, letra).
 - `question_lists` e `question_list_items`: lista (class_subject_id, título, data da aula, publicada) e itens com posição.
 - `attempts` (só se acrescenta): student_id, question_id, choice_id, class_group_id, question_list_id (opcional), is_correct, is_first, reset_at, created_at.
@@ -210,6 +215,8 @@ Nomes de tabela em inglês, `snake_case`; colunas em `snake_case` no banco e `ca
 - `essay_annotations`: essay_id, x, y, width, height (proporção de 0 a 1 da imagem), text, competency (1 a 5, opcional).
 - `audit_logs`: actor_id, action, entity_type, entity_id, details (JSON, sem dados pessoais), created_at.
 
+> **Pendente:** o `schema.prisma` ainda tem `guardians`, `questions.statement` e `question_images`. Uma nova migration deve trocá-los por `emergency_contacts` e `question_blocks` (as migrations já aplicadas não se editam).
+
 ### 7.3 O que o Prisma não declara (SQL manual na migration)
 
 | Onde | O quê | Regra |
@@ -221,8 +228,8 @@ Nomes de tabela em inglês, `snake_case`; colunas em `snake_case` no banco e `ca
 
 ## 8. Requisitos não funcionais
 
-- **Segurança:** senha com hash forte (bcrypt ou argon2, ver D15), mensagens de login genéricas, limite de tentativas em login e nas rotas públicas do convite, validação de toda entrada, HTTPS, CORS restrito, autorização conferida nos casos de uso e não só nos controllers.
-- **Privacidade (LGPD):** dados de menores e fotos de redação são dados pessoais. Logs sem dados pessoais, política de privacidade, política de retenção, consentimento do responsável. Eu não sou advogado: revisar isso com um profissional antes de publicar.
+- **Segurança:** senha com hash forte (scrypt do `node:crypto`, com os parâmetros guardados no próprio hash; D15), mensagens de login genéricas, limite de tentativas em login e nas rotas públicas do convite, validação de toda entrada, HTTPS, CORS restrito, autorização conferida nos casos de uso e não só nos controllers.
+- **Privacidade (LGPD):** dados de menores, contatos de emergência (dados de terceiros) e fotos de redação são dados pessoais. Logs sem dados pessoais, política de privacidade (informando a finalidade do contato de emergência), política de retenção e, depois da D24, consentimento do responsável. Eu não sou advogado: revisar isso com um profissional antes de publicar.
 - **Qualidade:** casos de uso com testes unitários, repositórios com testes de integração em PostgreSQL real.
 - **Operação:** backup do banco, logs estruturados, endpoint de saúde.
 
@@ -256,9 +263,9 @@ Não há pasta de ADR: o projeto tem uma pessoa só, então as decisões ficam r
 | D1 | Mínimo de 10 primeiras tentativas para classificar a dificuldade; vale para todos os anos. | Premissa |
 | D2 | Exatamente 40% de acerto cai em `HARD`. | Premissa |
 | D3 | Painel do aluno reflete resets; painel do professor usa só a primeira tentativa (RN-09). | Premissa |
-| D4 | Coordenação e professor da turma podem justificar falta. | Premissa |
+| D4 | Só a coordenação justifica falta; o professor da turma vê a justificativa e corrige lançamentos errados. | **Decidida** (RN-25) |
 | D5 | Qualquer professor da turma pode registrar a chamada do dia. | Premissa |
-| D6 | Enunciado em Markdown com fórmulas (KaTeX) e imagens anexas (`question_images`), pois matemática, física e química precisam disso. | Premissa |
+| D6 | Enunciado em blocos ordenados (RN-26). Premissa a confirmar: os blocos de texto aceitam Markdown com fórmulas (KaTeX), pois matemática, física e química precisam disso. | **Decidida** (blocos); Premissa (Markdown/KaTeX) |
 | D7 | Gabarito pode ser corrigido após respostas, com recálculo e auditoria (RN-18). | Premissa |
 | D8 | Tema da redação é texto livre por redação, sem cadastro de temas. | Premissa |
 | D9 | Uma imagem por redação no MVP. | Premissa |
@@ -266,8 +273,8 @@ Não há pasta de ADR: o projeto tem uma pessoa só, então as decisões ficam r
 | D11 | Retenção de dados de ex-alunos: definir política com apoio jurídico. | Aberta |
 | D12 | Login de aluno com aprovação pendente ou rejeitada: o login funciona (senha correta) e a sessão só alcança o endpoint de estado da aprovação. | **Decidida** (§4.1, RN-01) |
 | D13 | Aprovar o aluno só muda a aprovação, e a matrícula em turma é um passo separado (RF-09, Etapa 2). Alternativa: aprovar já escolhendo a turma. | **Aberta** (turmas só existem na Etapa 2) |
-| D14 | Regras de senha: tamanho mínimo e máximo, e se há regra de composição. O máximo depende do algoritmo (bcrypt só considera 72 bytes). | **Aberta** (T1.5c) |
-| D15 | Algoritmo de hash: bcrypt ou argon2. | **Aberta** (T1.8b) |
+| D14 | Regras de senha: de 8 a 72 caracteres, sem espaços, com pelo menos uma letra e um número. O limite de 72 veio do bcrypt; com scrypt não é obrigatório, então pode ser revisto. | **Decidida** (implementada no domínio) |
+| D15 | Algoritmo de hash de senha: scrypt (`node:crypto`), com salt aleatório e parâmetros (`N`, `r`, `p`) guardados no próprio texto do hash, em `users.password_hash`. | **Decidida** (implementada) |
 | D16 | RF-05 (recuperação de senha) e RF-06 (inativar usuário): entram na Etapa 1 ou na 2? Atenção: como o e-mail não é verificado (RN-23), a recuperação por e-mail só é segura se o e-mail do convite estiver certo; alternativa é a coordenação reemitir um convite de redefinição. | **Aberta** |
 | D17 | Primeiro acesso do professor: convite do tipo `TEACHER` (o professor define a própria senha ao aceitar). | **Decidida** (§4.2) |
 | D18 | Campos de `staff_profiles` além de `qualification` e `hired_at`. | **Aberta** |
@@ -276,7 +283,9 @@ Não há pasta de ADR: o projeto tem uma pessoa só, então as decisões ficam r
 | D21 | Aluno rejeitado: o fim do processo, ou ele pode corrigir os dados e reenviar? Se puder reenviar, o convite já usado não serve e é preciso um fluxo de correção (ou a coordenação emite novo convite). | **Aberta** (T1.8d) |
 | D22 | Professor não passa por aprovação: a conta nasce `ACTIVE` ao aceitar o convite, já que a coordenação o convidou diretamente. | **Premissa** (confirmar) |
 | D23 | Validade do convite: sugestão de 7 dias, configurável por variável de ambiente. | **Aberta** (T1.6) |
-| D24 | Consentimento do responsável (RN-17): hoje o menor preenche o formulário sozinho, sem supervisão. A regra e o formulário podem mudar depois de conversar com o curso e, se possível, com um advogado. O schema (`guardians`) fica como está até lá. | **Aberta** (aguardando o curso) |
+| D24 | Consentimento do responsável (RN-17): por enquanto o responsável autoriza automaticamente e nada é registrado; o menor preenche o formulário sozinho. A regra pode mudar depois de conversar com o curso e, se possível, com um advogado (por exemplo, exigir que o contato de emergência seja o responsável e registrar o consentimento, o que exigiria nova migration). | **Aberta** (aguardando o curso) |
+| D25 | Tipos de bloco do enunciado (RN-26): título da questão, subtítulo, texto, imagem, fonte e enunciado são candidatos. Falta definir a lista final, se o título é sempre o primeiro bloco, o que conta como "conteúdo" (ao menos um bloco de texto ou imagem?) e se "texto + fonte" são um ou dois blocos. | **Aberta** (Etapa 3, exercícios) |
+| D26 | Corrigir para presente uma falta já justificada descarta a justificativa e gera registro em `audit_logs` (RN-25). | **Premissa** (confirmar) |
 
 ## 10. Fora do MVP
 
