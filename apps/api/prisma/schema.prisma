@@ -1,11 +1,12 @@
-// Schema do Trilha (PostgreSQL). Fonte: modelagem aprovada em 22/11/2026 e SPEC.md §7.
+// Schema do Trilha (PostgreSQL). Fonte: SPEC.md §7 (v1.3, 27/11/2026).
 //
 // Convenções:
 // - Modelos em PascalCase singular; tabelas e colunas em snake_case (@@map / @map).
 // - Enums em PascalCase; o tipo no banco é snake_case (@@map).
 // - Datas de calendário = @db.Date (sem fuso). Instantes = @db.Timestamptz(3).
 // - Exclusão: Restrict por padrão (histórico não some por acidente). Cascade só
-//   em registros que não existem sem o pai (alternativas, itens de lista, etc.).
+//   em registros que não existem sem o pai (alternativas, blocos do enunciado, itens de lista,
+//   contato de emergência, etc.).
 //
 // O que o Prisma NÃO declara e entra como SQL manual na migration (ver SPEC.md §7):
 // - choices: índice único parcial em (question_id) WHERE is_correct  (RN-05)
@@ -108,6 +109,18 @@ enum QuestionSource {
   @@map("question_source")
 }
 
+// Lista provisória: a definição final dos tipos de bloco é a D25 (SPEC §9.2).
+enum QuestionBlockType {
+  TITLE // título da questão
+  SUBTITLE // título interno
+  TEXT
+  IMAGE
+  SOURCE // fonte do texto
+  STATEMENT // enunciado: último bloco e obrigatório (RN-26)
+
+  @@map("question_block_type")
+}
+
 enum AttendanceStatus {
   PRESENT
   ABSENT
@@ -170,28 +183,27 @@ model Student {
   user     User          @relation(fields: [userId], references: [id])
   approver StaffProfile? @relation("StudentApprovedBy", fields: [approvedBy], references: [userId])
 
-  guardian    Guardian?
-  enrollments Enrollment[]
-  attempts    Attempt[]
-  attendances Attendance[]
-  essays      Essay[]
+  emergencyContact EmergencyContact? // obrigatório para todo aluno (RN-24), garantido pelo caso de uso
+  enrollments      Enrollment[]
+  attempts         Attempt[]
+  attendances      Attendance[]
+  essays           Essay[]
 
   @@index([approvalStatus])
   @@map("students")
 }
 
-model Guardian {
-  id            String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  studentId     String   @unique @map("student_id") @db.Uuid
-  name          String   @db.VarChar(150)
-  relationship  String   @db.VarChar(50) // parentesco
-  contact       String   @db.VarChar(254) // telefone ou e-mail
-  consentedAt   DateTime @map("consented_at") @db.Timestamptz(3)
-  policyVersion String   @map("policy_version") @db.VarChar(20)
+model EmergencyContact {
+  id           String  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  studentId    String  @unique @map("student_id") @db.Uuid
+  name         String  @db.VarChar(150)
+  relationship String  @db.VarChar(50) // parentesco
+  phone        String  @db.VarChar(20)
+  isGuardian   Boolean @map("is_guardian") // true se esta pessoa é o responsável pelo aluno
 
   student Student @relation(fields: [studentId], references: [userId], onDelete: Cascade)
 
-  @@map("guardians")
+  @@map("emergency_contacts")
 }
 
 model StaffProfile {
@@ -342,7 +354,6 @@ model Question {
   id              String         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   subjectId       String         @map("subject_id") @db.Uuid
   topicId         String         @map("topic_id") @db.Uuid
-  statement       String // Markdown com fórmulas (KaTeX)
   source          QuestionSource
   examYear        Int?           @map("exam_year") @db.SmallInt
   sourceReference String?        @map("source_reference") @db.VarChar(200)
@@ -355,7 +366,7 @@ model Question {
   topic   Topic        @relation(fields: [topicId], references: [id])
   creator StaffProfile @relation(fields: [createdBy], references: [userId])
 
-  images    QuestionImage[]
+  blocks    QuestionBlock[]
   choices   Choice[]
   listItems QuestionListItem[]
   attempts  Attempt[]
@@ -365,16 +376,18 @@ model Question {
   @@map("questions")
 }
 
-model QuestionImage {
-  id         String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  questionId String @map("question_id") @db.Uuid
-  fileKey    String @map("file_key") @db.VarChar(255)
-  mime       String @db.VarChar(100)
-  position   Int    @default(0) @db.SmallInt
+model QuestionBlock {
+  id         String            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  questionId String            @map("question_id") @db.Uuid
+  position   Int               @db.SmallInt // ordem no enunciado; o último bloco é o STATEMENT (RN-26)
+  type       QuestionBlockType
+  text       String? // Markdown com fórmulas (KaTeX) nos blocos de texto (D6)
+  imageKey   String?           @map("image_key") @db.VarChar(255) // só nos blocos IMAGE
 
   question Question @relation(fields: [questionId], references: [id], onDelete: Cascade)
 
-  @@map("question_images")
+  @@unique([questionId, position])
+  @@map("question_blocks")
 }
 
 model Choice {
@@ -472,7 +485,7 @@ model Attendance {
   studentId     String           @map("student_id") @db.Uuid
   status        AttendanceStatus
   justification String?
-  excusedBy     String?          @map("excused_by") @db.Uuid
+  excusedBy     String?          @map("excused_by") @db.Uuid // só a coordenação justifica (RN-25)
   excusedAt     DateTime?        @map("excused_at") @db.Timestamptz(3)
 
   rollCall RollCall @relation(fields: [rollCallId], references: [id])
